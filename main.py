@@ -126,6 +126,11 @@ def dockernetworkcreate(name, subnet, gateway, ipv6=True, enablemasquerade=False
         cmd += ["--gateway", gateway]
     if not enablemasquerade:
         cmd += ["--opt", "com.docker.network.bridge.enable_ip_masquerade=false"]
+    if dns:
+        entries = dns if isinstance(dns, list) else [dns]
+        for server in entries:
+            if server:
+                cmd += ["--dns", server]
     cmd.append(name)
 
     code, out, err = dockerexec(cmd, timeout=30)
