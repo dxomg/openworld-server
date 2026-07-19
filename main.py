@@ -231,6 +231,12 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         "-v", f"{mountpath}:/data",
     ]
 
+    if isinstance(dns, list):
+        for server in dns:
+            cmd += ["--dns", server]
+    elif dns:
+        cmd += ["--dns", str(dns)]
+
     if readbps and readbps > 0:
         bytespersec = int(readbps * 1000000 / 8)
         cmd += ["--device-read-bps", f"/dev/sda:{bytespersec}b"]
