@@ -214,12 +214,20 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         if code != 0:
             raise RuntimeError(f"mount failed (code {code}): {err or out}")
 
+    # Write resolv.conf into data mount
+    resolvpath = os.path.join(mountpath, ".resolv.conf")
+    dnsentries = dns if isinstance(dns, list) else [dns] if dns else ["1.1.1.1", "8.8.8.8"]
+    resolvcontent = "\n".join(f"nameserver {s}" for s in dnsentries) + "\n"
+    with open(resolvpath, "w") as f:
+        f.write(resolvcontent)
+
     cmd = [
         "docker", "create",
         "--runtime=sysbox-runc",
         "--name", hostname,
         "--hostname", hostname,
         "--network", network,
+        "-v", f"{resolvpath}:/etc/resolv.conf:ro",
     ]
 
     if ip:
@@ -235,12 +243,6 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         "-e", f"ROOT_PASSWORD={rootpassword}",
         "-v", f"{mountpath}:/data",
     ]
-
-    if isinstance(dns, list):
-        for server in dns:
-            cmd += ["--dns", server]
-    elif dns:
-        cmd += ["--dns", str(dns)]
 
     if readbps and readbps > 0:
         bytespersec = int(readbps * 1000000 / 8)
@@ -280,10 +282,7 @@ def dockerdestroyvps(hostname, uuid):
 
     # Remove mount dir
     if os.path.exists(mountpath):
-        try:
-            os.rmdir(mountpath)
-        except OSError:
-            pass
+        shutil.rmtree(mountpath, ignore_errors=True)
 
     # Remove .img file
     if os.path.exists(imgpath):
