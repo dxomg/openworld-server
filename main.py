@@ -195,19 +195,19 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
 
     if diskmb and diskmb > 0:
         # Create sparse .img file
-        code, _, err = dockerexec(["dd", "if=/dev/zero", f"of={imgpath}", "bs=1M", "count=0", f"seek={diskmb}"], timeout=30)
+        code, out, err = dockerexec(["dd", "if=/dev/zero", f"of={imgpath}", "bs=1M", "count=0", f"seek={diskmb}"], timeout=30)
         if code != 0:
-            raise RuntimeError(f"failed to create disk image: {err}")
+            raise RuntimeError(f"dd failed (code {code}): {err or out}")
 
         # Format as ext4
-        code, _, err = dockerexec(["mkfs.ext4", "-F", "-q", imgpath], timeout=60)
+        code, out, err = dockerexec(["mkfs.ext4", "-F", "-q", imgpath], timeout=60)
         if code != 0:
-            raise RuntimeError(f"failed to format disk image: {err}")
+            raise RuntimeError(f"mkfs.ext4 failed (code {code}): {err or out}")
 
         # Mount
-        code, _, err = dockerexec(["mount", "-o", "loop", imgpath, mountpath], timeout=15)
+        code, out, err = dockerexec(["mount", "-o", "loop", imgpath, mountpath], timeout=15)
         if code != 0:
-            raise RuntimeError(f"failed to mount disk image: {err}")
+            raise RuntimeError(f"mount failed (code {code}): {err or out}")
 
     cmd = [
         "docker", "create",
@@ -245,7 +245,7 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
     if code != 0:
         # Cleanup mount on failure
         dockerexec(["umount", mountpath], timeout=10)
-        raise RuntimeError(err or "container creation failed")
+        raise RuntimeError(f"docker create failed (code {code}): {err or out}")
     return out
 
 def dockerdestroyvps(hostname, uuid):
@@ -363,6 +363,8 @@ def createvps():
         return jsonify({"containerId": containerid, "hostname": data["hostname"], "status": "created"}), 201
     except RuntimeError as e:
         return jsonify({"error": str(e)}), 500
+    except Exception as e:
+        return jsonify({"error": f"unexpected: {str(e)}"}), 500
 
 @app.route(f"{API}/vps/<hostname>", methods=["DELETE"])
 @requireapikey
