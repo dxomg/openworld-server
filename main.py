@@ -262,7 +262,23 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         # Cleanup mount on failure
         dockerexec(["umount", mountpath], timeout=10)
         raise RuntimeError(f"docker create failed (code {code}): {err or out}")
-    return out
+
+    containerid = out
+
+    # Start container to set password
+    code, _, err = dockerexec(["docker", "start", hostname], timeout=30)
+    if code != 0:
+        raise RuntimeError(f"docker start failed: {err}")
+
+    # Set root password
+    code, _, err = dockerexec(["docker", "exec", hostname, "bash", "-c",
+        f"echo 'root:{rootpassword}' | chpasswd"], timeout=15)
+    if code != 0:
+        # Try alpine-style
+        dockerexec(["docker", "exec", hostname, "sh", "-c",
+            f"echo 'root:{rootpassword}' | chpasswd"], timeout=15)
+
+    return containerid
 
 def dockerdestroyvps(hostname, uuid):
     dockerexec(["docker", "stop", "-t", "5", hostname], timeout=20)
