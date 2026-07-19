@@ -57,8 +57,8 @@ Creates a Docker container using sysbox-runc.
 | `ram` | string | yes | Memory limit (e.g. `512m`) |
 | `swap` | string | yes | Memory + swap limit |
 | `network` | string | yes | Docker network name |
-| `ip` | string | yes | IPv4 or IPv6 address |
-| `dns` | string[] | yes | DNS servers |
+| `ip` | string | no | IPv4 or IPv6 address (auto-assigned if omitted) |
+| `dns` | string[] | no | DNS servers (defaults to 1.1.1.1, 8.8.8.8) |
 | `image` | string | yes | Docker image name |
 | `rootPassword` | string | yes | Root password passed as env |
 | `readBps` | int | no | Read rate limit in Mbps (0 = unlimited) |

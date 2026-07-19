@@ -215,7 +215,15 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         "--name", hostname,
         "--hostname", hostname,
         "--network", network,
-        f"--ip={ip}" if ":" not in ip else f"--ip6={ip}",
+    ]
+
+    if ip:
+        if ":" in ip:
+            cmd.append(f"--ip6={ip}")
+        else:
+            cmd.append(f"--ip={ip}")
+
+    cmd += [
         "--cpus", str(cpu),
         "--memory", ram,
         "--memory-swap", swap,
@@ -325,7 +333,7 @@ def createvps():
     if not data:
         return jsonify({"error": "json body required"}), 400
 
-    required = ["uuid", "hostname", "cpu", "ram", "swap", "network", "ip", "dns", "image", "rootPassword"]
+    required = ["uuid", "hostname", "cpu", "ram", "swap", "network", "image", "rootPassword"]
     missing = [k for k in required if k not in data]
     if missing:
         return jsonify({"error": f"missing fields: {', '.join(missing)}"}), 400
@@ -334,7 +342,6 @@ def createvps():
         "uuid": data["uuid"],
         "hostname": data["hostname"],
         "network": data["network"],
-        "ip": data["ip"],
         "image": data["image"],
     })
     if not ok:
