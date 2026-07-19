@@ -61,6 +61,9 @@ Creates a Docker container using sysbox-runc.
 | `dns` | string[] | yes | DNS servers |
 | `image` | string | yes | Docker image name |
 | `rootPassword` | string | yes | Root password passed as env |
+| `readBps` | int | no | Read rate limit in Mbps (0 = unlimited) |
+| `writeBps` | int | no | Write rate limit in Mbps (0 = unlimited) |
+| `diskMb` | int | no | Disk size in MB for .img file (0 = no image, use directory) |
 
 **Response** `201`
 ```json
@@ -473,6 +476,7 @@ GET /abuse/config
   "cpu_max_percent": 90,
   "ram_max_percent": 95,
   "disk_max_gb": 0,
+  "diskio_max_mbps": 200,
   "net_max_mbps": 500,
   "check_interval": 30,
   "ban_duration_minutes": 30,
@@ -501,6 +505,7 @@ POST /abuse/config
 | **CPU** | Usage above threshold for sustained period |
 | **RAM** | Memory usage above threshold |
 | **Disk** | Disk usage above limit (if set) |
+| **Disk I/O** | Block read+write above threshold (default 200MB) |
 | **Network** | Network I/O above threshold |
 | **Mining** | Known mining processes (xmrig, minerd, etc.) |
 | **Mining** | Connections to known mining pool ports |

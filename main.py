@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
         "cpu_max_percent": 90,
         "ram_max_percent": 95,
         "disk_max_gb": 0,
+        "diskio_max_mbps": 200,
         "net_max_mbps": 500,
         "check_interval": 30,
         "ban_duration_minutes": 30,
@@ -184,9 +185,29 @@ def dockernetworkdisconnect(network, container, force=False):
         raise RuntimeError(err or "network disconnect failed")
     return True
 
-def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, rootpassword):
-    hostdatadir = os.path.join(config["storage"]["base_path"], uuid)
-    os.makedirs(hostdatadir, exist_ok=True)
+def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, rootpassword, readbps=0, writebps=0, diskmb=0):
+    diskdir = config["storage"]["base_path"]
+    os.makedirs(diskdir, exist_ok=True)
+
+    imgpath = os.path.join(diskdir, f"{uuid}.img")
+    mountpath = os.path.join(diskdir, uuid)
+    os.makedirs(mountpath, exist_ok=True)
+
+    if diskmb and diskmb > 0:
+        # Create sparse .img file
+        code, _, err = dockerexec(["dd", "if=/dev/zero", f"of={imgpath}", "bs=1M", "count=0", f"seek={diskmb}"], timeout=30)
+        if code != 0:
+            raise RuntimeError(f"failed to create disk image: {err}")
+
+        # Format as ext4
+        code, _, err = dockerexec(["mkfs.ext4", "-F", "-q", imgpath], timeout=60)
+        if code != 0:
+            raise RuntimeError(f"failed to format disk image: {err}")
+
+        # Mount
+        code, _, err = dockerexec(["mount", "-o", "loop", imgpath, mountpath], timeout=15)
+        if code != 0:
+            raise RuntimeError(f"failed to mount disk image: {err}")
 
     cmd = [
         "docker", "create",
@@ -199,8 +220,15 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         "--memory", ram,
         "--memory-swap", swap,
         "-e", f"ROOT_PASSWORD={rootpassword}",
-        "-v", f"{hostdatadir}:/data",
+        "-v", f"{mountpath}:/data",
     ]
+
+    if readbps and readbps > 0:
+        bytespersec = int(readbps * 1000000 / 8)
+        cmd += ["--device-read-bps", f"/dev/sda:{bytespersec}b"]
+    if writebps and writebps > 0:
+        bytespersec = int(writebps * 1000000 / 8)
+        cmd += ["--device-write-bps", f"/dev/sda:{bytespersec}b"]
 
     if isinstance(dns, list):
         for server in dns:
@@ -215,14 +243,33 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
 
     code, out, err = dockerexec(cmd, timeout=120)
     if code != 0:
+        # Cleanup mount on failure
+        dockerexec(["umount", mountpath], timeout=10)
         raise RuntimeError(err or "container creation failed")
     return out
 
 def dockerdestroyvps(hostname, uuid):
-    dockerexec(["docker", "rm", "-f", hostname])
-    dirpath = os.path.join(config["storage"]["base_path"], uuid)
-    if os.path.exists(dirpath):
-        shutil.rmtree(dirpath)
+    dockerexec(["docker", "stop", "-t", "5", hostname], timeout=20)
+    dockerexec(["docker", "rm", "-f", hostname], timeout=15)
+
+    diskdir = config["storage"]["base_path"]
+    imgpath = os.path.join(diskdir, f"{uuid}.img")
+    mountpath = os.path.join(diskdir, uuid)
+
+    # Unmount if mounted
+    dockerexec(["umount", mountpath], timeout=10)
+
+    # Remove mount dir
+    if os.path.exists(mountpath):
+        try:
+            os.rmdir(mountpath)
+        except OSError:
+            pass
+
+    # Remove .img file
+    if os.path.exists(imgpath):
+        os.remove(imgpath)
+
     return True
 
 def dockerstartvps(hostname):
@@ -309,6 +356,9 @@ def createvps():
             dns=data["dns"],
             image=data["image"],
             rootpassword=data["rootPassword"],
+            readbps=data.get("readBps", 0),
+            writebps=data.get("writeBps", 0),
+            diskmb=data.get("diskMb", 0),
         )
         return jsonify({"containerId": containerid, "hostname": data["hostname"], "status": "created"}), 201
     except RuntimeError as e:

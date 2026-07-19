@@ -13,6 +13,7 @@ DEFAULT_THRESHOLDS = {
     "cpu_sustained_seconds": 120,
     "ram_max_percent": 95,
     "disk_max_gb": 0,
+    "diskio_max_mbps": 200,
     "net_max_mbps": 500,
     "check_interval": 30,
     "ban_duration_minutes": 30,
@@ -175,6 +176,18 @@ class AbuseAgent:
             }
             self.violations[name] = []
 
+    def _parsebytes(self, s):
+        """Parse a byte string like '1.5MiB' or '100KB' to MB."""
+        s = s.strip()
+        match = re.match(r"(\d+\.?\d*)\s*([A-Za-z]+)", s)
+        if not match:
+            return 0
+        val = float(match.group(1))
+        unit = match.group(2).upper()
+        multipliers = {"B": 1/1024/1024, "KB": 1/1024, "KIB": 1/1024, "MB": 1, "MIB": 1,
+                       "GB": 1024, "GIB": 1024, "TB": 1024*1024, "TIB": 1024*1024}
+        return val * multipliers.get(unit, 1)
+
     def checkcontainer(self, container):
         name = container["name"]
         state = container.get("state", "")
@@ -216,6 +229,15 @@ class AbuseAgent:
         if disk and self.thresholds["disk_max_gb"] > 0:
             if disk["usedGb"] > self.thresholds["disk_max_gb"]:
                 self.addviolation(name, "disk", f"Disk at {disk['usedGb']}GB (limit {self.thresholds['disk_max_gb']}GB)")
+
+        block_str = stats.get("block", "0B / 0B").strip()
+        block_parts = block_str.split(" / ")
+        if len(block_parts) == 2:
+            block_read = self._parsebytes(block_parts[0])
+            block_write = self._parsebytes(block_parts[1])
+            block_total = block_read + block_write
+            if self.thresholds["diskio_max_mbps"] > 0 and block_total > self.thresholds["diskio_max_mbps"]:
+                self.addviolation(name, "diskio", f"Disk I/O at {block_total:.0f}MB (read {block_read:.0f}MB + write {block_write:.0f}MB)")
 
         net_match = re.search(r"(\d+\.?\d*)\s*([A-Za-z]+)", net_str)
         if net_match:
