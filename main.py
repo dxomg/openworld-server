@@ -116,7 +116,7 @@ def containerstatus(name):
 
 # --- Network Operations ---
 
-def dockernetworkcreate(name, subnet, gateway, ipv6=True, enablemasquerade=False):
+def dockernetworkcreate(name, subnet, gateway, ipv6=True, enablemasquerade=False, dns=None):
     cmd = ["docker", "network", "create"]
     if ipv6:
         cmd.append("--ipv6")
@@ -527,6 +527,7 @@ def createnetwork():
             gateway=data.get("gateway"),
             ipv6=data.get("ipv6", True),
             enablemasquerade=data.get("enableMasquerade", False),
+            dns=data.get("dns"),
         )
         return jsonify({"networkId": netid, "name": name, "status": "created"}), 201
     except RuntimeError as e:
