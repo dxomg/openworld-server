@@ -113,6 +113,77 @@ def containerstatus(name):
         return "offline"
     return out
 
+# --- Network Operations ---
+
+def dockernetworkcreate(name, subnet, gateway, ipv6=True, enablemasquerade=False):
+    cmd = ["docker", "network", "create"]
+    if ipv6:
+        cmd.append("--ipv6")
+    if subnet:
+        cmd += ["--subnet", subnet]
+    if gateway:
+        cmd += ["--gateway", gateway]
+    if not enablemasquerade:
+        cmd += ["--opt", "com.docker.network.bridge.enable_ip_masquerade=false"]
+    cmd.append(name)
+
+    code, out, err = dockerexec(cmd, timeout=30)
+    if code != 0:
+        raise RuntimeError(err or "network creation failed")
+    return out
+
+def dockernetworkremove(name):
+    code, out, err = dockerexec(["docker", "network", "rm", name], timeout=15)
+    if code != 0:
+        raise RuntimeError(err or "network removal failed")
+    return True
+
+def dockernetworklist():
+    code, out, _ = dockerexec(["docker", "network", "ls", "--format",
+        '{"id":"{{.ID}}","name":"{{.Name}}","driver":"{{.Driver}}","scope":"{{.Scope}}"}'])
+    if code != 0:
+        return []
+    networks = []
+    for line in out.splitlines():
+        try:
+            networks.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return networks
+
+def dockernetworkinspect(name):
+    code, out, err = dockerexec(["docker", "network", "inspect", name])
+    if code != 0:
+        return None
+    try:
+        data = json.loads(out)
+        return data[0] if isinstance(data, list) and data else data
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+def dockernetworkconnect(network, container, ip=None):
+    cmd = ["docker", "network", "connect"]
+    if ip:
+        if ":" in ip:
+            cmd += ["--ip6", ip]
+        else:
+            cmd += ["--ip", ip]
+    cmd += [network, container]
+    code, out, err = dockerexec(cmd, timeout=15)
+    if code != 0:
+        raise RuntimeError(err or "network connect failed")
+    return True
+
+def dockernetworkdisconnect(network, container, force=False):
+    cmd = ["docker", "network", "disconnect"]
+    if force:
+        cmd.append("--force")
+    cmd += [network, container]
+    code, out, err = dockerexec(cmd, timeout=15)
+    if code != 0:
+        raise RuntimeError(err or "network disconnect failed")
+    return True
+
 def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, rootpassword):
     hostdatadir = os.path.join(config["storage"]["base_path"], uuid)
     os.makedirs(hostdatadir, exist_ok=True)
@@ -356,6 +427,126 @@ def vpsstats(hostname):
 
     metrics = dockerstatsvps(hostname)
     return jsonify({"hostname": hostname, "status": status, "metrics": metrics})
+
+# --- Network Management ---
+
+@app.route(f"{API}/networks", methods=["GET"])
+@requireapikey
+def listnetworks():
+    networks = dockernetworklist()
+    return jsonify({"networks": networks})
+
+@app.route(f"{API}/networks", methods=["POST"])
+@requireapikey
+def createnetwork():
+    data = request.json
+    if not data:
+        return jsonify({"error": "json body required"}), 400
+
+    name = data.get("name")
+    if not name:
+        return jsonify({"error": "name required"}), 400
+
+    ok, badkey = validatesafeparams({"name": name})
+    if not ok:
+        return jsonify({"error": "invalid network name"}), 400
+
+    exists = dockernetworkinspect(name)
+    if exists:
+        return jsonify({"error": "network already exists"}), 409
+
+    try:
+        netid = dockernetworkcreate(
+            name=name,
+            subnet=data.get("subnet"),
+            gateway=data.get("gateway"),
+            ipv6=data.get("ipv6", True),
+            enablemasquerade=data.get("enableMasquerade", False),
+        )
+        return jsonify({"networkId": netid, "name": name, "status": "created"}), 201
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route(f"{API}/networks/<name>", methods=["GET"])
+@requireapikey
+def inspectnetwork(name):
+    ok, _ = validatesafeparams({"name": name})
+    if not ok:
+        return jsonify({"error": "invalid name"}), 400
+
+    info = dockernetworkinspect(name)
+    if not info:
+        return jsonify({"error": "network not found"}), 404
+
+    result = {
+        "name": info.get("Name", ""),
+        "id": info.get("Id", ""),
+        "driver": info.get("Driver", ""),
+        "scope": info.get("Scope", ""),
+        "enableIPv6": info.get("EnableIPv6", False),
+        "ipam": info.get("IPAM", {}),
+        "containers": {},
+    }
+    for cid, cdata in info.get("Containers", {}).items():
+        result["containers"][cid] = {
+            "name": cdata.get("Name", ""),
+            "ipv4": cdata.get("IPv4Address", ""),
+            "ipv6": cdata.get("IPv6Address", ""),
+        }
+    return jsonify(result)
+
+@app.route(f"{API}/networks/<name>", methods=["DELETE"])
+@requireapikey
+def removenetwork(name):
+    ok, _ = validatesafeparams({"name": name})
+    if not ok:
+        return jsonify({"error": "invalid name"}), 400
+
+    # Check for connected containers
+    info = dockernetworkinspect(name)
+    if info and info.get("Containers"):
+        count = len(info["Containers"])
+        return jsonify({"error": f"network has {count} connected container(s)", "containers": list(info["Containers"].keys())}), 409
+
+    try:
+        dockernetworkremove(name)
+        return jsonify({"name": name, "status": "removed"})
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route(f"{API}/networks/<name>/connect", methods=["POST"])
+@requireapikey
+def connectnetwork(name):
+    data = request.json
+    if not data or not data.get("container"):
+        return jsonify({"error": "container required"}), 400
+
+    ok, _ = validatesafeparams({"name": name, "container": data["container"]})
+    if not ok:
+        return jsonify({"error": "invalid parameters"}), 400
+
+    try:
+        dockernetworkconnect(name, data["container"], ip=data.get("ip"))
+        return jsonify({"network": name, "container": data["container"], "status": "connected"})
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route(f"{API}/networks/<name>/disconnect", methods=["POST"])
+@requireapikey
+def disconnectnetwork(name):
+    data = request.json
+    if not data or not data.get("container"):
+        return jsonify({"error": "container required"}), 400
+
+    ok, _ = validatesafeparams({"name": name, "container": data["container"]})
+    if not ok:
+        return jsonify({"error": "invalid parameters"}), 400
+
+    try:
+        dockernetworkdisconnect(name, data["container"], force=data.get("force", False))
+        return jsonify({"network": name, "container": data["container"], "status": "disconnected"})
+    except RuntimeError as e:
+        return jsonify({"error": str(e)}), 500
 
 # --- Legacy Compat ---
 

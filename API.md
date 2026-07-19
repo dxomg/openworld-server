@@ -267,6 +267,145 @@ Common status codes:
 
 ---
 
+## Network Management
+
+### List Networks
+
+```
+GET /networks
+```
+
+**Response**
+```json
+{
+  "networks": [
+    {"id": "abc123", "name": "route64-docker", "driver": "bridge", "scope": "local"}
+  ]
+}
+```
+
+### Create Network
+
+```
+POST /networks
+```
+
+**Body**
+```json
+{
+  "name": "route64-docker",
+  "subnet": "2a11:6c7:2200:b101::/64",
+  "gateway": "2a11:6c7:2200:b101::1",
+  "ipv6": true,
+  "enableMasquerade": false
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `name` | string | yes | Network name |
+| `subnet` | string | no | Subnet CIDR |
+| `gateway` | string | no | Gateway address |
+| `ipv6` | bool | no | Enable IPv6 (default true) |
+| `enableMasquerade` | bool | no | IP masquerade (default false) |
+
+**Response** `201`
+```json
+{
+  "networkId": "abc123...",
+  "name": "route64-docker",
+  "status": "created"
+}
+```
+
+### Inspect Network
+
+```
+GET /networks/<name>
+```
+
+**Response**
+```json
+{
+  "name": "route64-docker",
+  "id": "abc123...",
+  "driver": "bridge",
+  "scope": "local",
+  "enableIPv6": true,
+  "ipam": {
+    "Driver": "default",
+    "Config": [
+      {"Subnet": "2a11:6c7:2200:b101::/64", "Gateway": "2a11:6c7:2200:b101::1"}
+    ]
+  },
+  "containers": {
+    "def456": {"name": "vps-abcd12", "ipv4": "", "ipv6": "2a11:6c7:2200:b101::2/64"}
+  }
+}
+```
+
+### Delete Network
+
+```
+DELETE /networks/<name>
+```
+
+**Response**
+```json
+{
+  "name": "route64-docker",
+  "status": "removed"
+}
+```
+
+### Connect Container to Network
+
+```
+POST /networks/<name>/connect
+```
+
+**Body**
+```json
+{
+  "container": "vps-abcd12",
+  "ip": "2a11:6c7:2200:b101::10"
+}
+```
+
+**Response**
+```json
+{
+  "network": "route64-docker",
+  "container": "vps-abcd12",
+  "status": "connected"
+}
+```
+
+### Disconnect Container from Network
+
+```
+POST /networks/<name>/disconnect
+```
+
+**Body**
+```json
+{
+  "container": "vps-abcd12",
+  "force": false
+}
+```
+
+**Response**
+```json
+{
+  "network": "route64-docker",
+  "container": "vps-abcd12",
+  "status": "disconnected"
+}
+```
+
+---
+
 ## Abuse Detection
 
 The abuse agent (`agent.py`) monitors containers for resource abuse and mining. Run separately:
