@@ -43,6 +43,8 @@ Creates a Docker container using sysbox-runc.
   "swap": "1024m",
   "network": "bridge",
   "ip": "2a11:6c7:2200:b101::10",
+  "ipv4": "172.20.0.10",
+  "ipv6": "2a11:6c7:2200:b101::10",
   "dns": ["1.1.1.1", "8.8.8.8"],
   "image": "ubuntu-22.04",
   "rootPassword": "secure-password"
@@ -57,7 +59,9 @@ Creates a Docker container using sysbox-runc.
 | `ram` | string | yes | Memory limit (e.g. `512m`) |
 | `swap` | string | yes | Memory + swap limit |
 | `network` | string | yes | Docker network name |
-| `ip` | string | no | IPv4 or IPv6 address (auto-assigned if omitted) |
+| `ip` | string | no | Legacy single IP (prefer `ipv4`/`ipv6`) |
+| `ipv4` | string | no | IPv4 address to assign |
+| `ipv6` | string | no | IPv6 address to assign |
 | `dns` | string[] | no | DNS servers (defaults to 1.1.1.1, 8.8.8.8) |
 | `image` | string | yes | Docker image name |
 | `rootPassword` | string | yes | Root password passed as env |

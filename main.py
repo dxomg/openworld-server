@@ -185,7 +185,7 @@ def dockernetworkdisconnect(network, container, force=False):
         raise RuntimeError(err or "network disconnect failed")
     return True
 
-def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, rootpassword, readbps=0, writebps=0, diskmb=0):
+def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, rootpassword, readbps=0, writebps=0, diskmb=0, ipv4=None, ipv6=None):
     diskdir = config["storage"]["base_path"]
     os.makedirs(diskdir, exist_ok=True)
 
@@ -225,7 +225,12 @@ def dockercreatevps(uuid, hostname, cpu, ram, swap, network, ip, dns, image, roo
         "-v", f"{resolvpath}:/etc/resolv.conf:ro",
     ]
 
-    if ip:
+    if ipv4:
+        cmd.append(f"--ip={ipv4}")
+    if ipv6:
+        cmd.append(f"--ip6={ipv6}")
+    elif ip:
+        # Legacy single-ip fallback
         if ":" in ip:
             cmd.append(f"--ip6={ip}")
         else:
@@ -380,13 +385,15 @@ def createvps():
             ram=data["ram"],
             swap=data["swap"],
             network=data["network"],
-            ip=data["ip"],
+            ip=data.get("ip"),
             dns=data["dns"],
             image=data["image"],
             rootpassword=data["rootPassword"],
             readbps=data.get("readBps", 0),
             writebps=data.get("writeBps", 0),
             diskmb=data.get("diskMb", 0),
+            ipv4=data.get("ipv4"),
+            ipv6=data.get("ipv6"),
         )
         return jsonify({"containerId": containerid, "hostname": data["hostname"], "status": "created"}), 201
     except RuntimeError as e:
